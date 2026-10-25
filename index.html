@@ -127,7 +127,13 @@
     width:100%; font-size:1.05rem; font-family:inherit; padding:0.7rem; border:2px solid #ccc; border-radius:10px; background:#fff;
   }
   .field input:focus, .field select:focus, .field textarea:focus{ outline:none; border-color:var(--main); }
-  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; }
+  /* iPhoneのSafariでは日付・時間の欄が中身の幅より小さくならず、枠からはみ出すので、幅を枠に合わせる */
+  .field input[type="date"], .field input[type="time"]{
+    -webkit-appearance:none; appearance:none; display:block; min-width:0; max-width:100%; min-height:3.1rem; text-align:left;
+  }
+  .field input[type="date"]::-webkit-date-and-time-value, .field input[type="time"]::-webkit-date-and-time-value{ text-align:left; }
+  .row2{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0.6rem; }
+  .row2 > .field{ min-width:0; }
   .chips{ display:flex; flex-wrap:wrap; gap:0.5rem; }
   .chips label{ border:2px solid #ccc; border-radius:999px; padding:0.35rem 0.9rem; cursor:pointer; font-size:0.95rem; }
   .chips label:has(input:checked){ border-color:var(--main); background:var(--main-soft); color:var(--main); font-weight:700; }
