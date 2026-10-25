@@ -151,6 +151,14 @@
   .add-leg{ width:100%; background:#fff; border:2px dashed var(--main); color:var(--main); border-radius:12px; padding:0.7rem; font-family:inherit; font-size:1rem; font-weight:700; cursor:pointer; }
   .fare-total{ text-align:right; margin-top:0.6rem; }
   .fare-total b{ font-size:1.2rem; color:var(--accent); }
+  .visit{ border:2px solid var(--main); border-radius:14px; padding:0.8rem; margin-bottom:0.8rem; background:#fff; }
+  .visit-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; }
+  .visit-head b{ color:var(--main); font-size:1.1rem; }
+  .visit .field:last-child{ margin-bottom:0; }
+  .add-visit{ margin-bottom:0.3rem; }
+  .visit-hint{ margin-bottom:1.2rem; }
+  .done-visits{ list-style:none; display:inline-block; text-align:left; margin-bottom:0.6rem; font-weight:700; }
+  .done-visits li{ margin-bottom:0.2rem; }
   .done-legs{ list-style:none; display:inline-block; text-align:left; margin-bottom:0.8rem; }
   .big-btn{ width:100%; background:var(--main); color:#fff; border:none; border-radius:14px; padding:1rem; font-size:1.15rem; font-weight:700; font-family:inherit; cursor:pointer; margin-top:0.5rem; }
   .sub-btn{ width:100%; background:#fff; color:var(--main); border:2px solid var(--main); border-radius:14px; padding:0.8rem; font-size:1rem; font-weight:700; font-family:inherit; cursor:pointer; margin-top:0.8rem; }
@@ -345,28 +353,11 @@
   <section class="screen" id="report" data-title="作業報告">
     <form id="reportForm">
       <div class="field"><label for="rDate">日付</label><input type="date" id="rDate" required></div>
-      <div class="field"><label for="rCustomer">お客様</label>
-        <select id="rCustomer" required>
-          <option value="A様">A様（掃除・洗濯）</option>
-          <option value="B様">B様（訪問調理）</option>
-          <option value="C様">C様（整理収納）</option>
-        </select>
-      </div>
-      <div class="row2">
-        <div class="field"><label for="rStart">始めた時間</label><input type="time" id="rStart" value="13:00" required></div>
-        <div class="field"><label for="rEnd">終わった時間</label><input type="time" id="rEnd" value="15:30" required></div>
-      </div>
-      <div class="field"><div class="label">やった作業</div>
-        <div class="chips">
-          <label><input type="checkbox" name="work" value="掃除" checked>掃除</label>
-          <label><input type="checkbox" name="work" value="洗濯">洗濯</label>
-          <label><input type="checkbox" name="work" value="料理">料理</label>
-          <label><input type="checkbox" name="work" value="片付け">片付け</label>
-          <label><input type="checkbox" name="work" value="買い物">買い物</label>
-        </div>
-      </div>
+      <div id="visits"></div>
+      <button type="button" class="add-leg add-visit" id="addVisit">＋ 2件目を足す</button>
+      <p class="muted visit-hint" id="visitHint">同じ日に2件・3件あった日は、ここで足してまとめて報告できます（3件まで）。</p>
       <div class="field"><div class="label">交通費（どこから・どこまで・いくら）</div>
-        <p class="muted">行きと帰りを1行ずつ書きます。午前と午後で2件ある日は「A様宅 → B様宅」のように、お宅の間の移動も書いてください。</p>
+        <p class="muted">その日の移動をまとめて書きます。2件以上ある日は「A様宅 → B様宅」のように、お宅の間の移動も入ります（件を足すと自動で入ります）。</p>
         <div id="legs"></div>
         <button type="button" class="add-leg" id="addLeg">＋ 区間を足す</button>
         <p class="fare-total">交通費の合計　<b id="fareTotal">0円</b></p>
@@ -382,6 +373,7 @@
     <div class="done">
       <div class="mark">✓</div>
       <h2>報告しました</h2>
+      <ul class="done-visits" id="doneVisits"></ul>
       <p id="doneText"></p>
       <ul class="done-legs" id="doneLegs"></ul>
       <p class="muted">社員さんが計算しなくても、給料・交通費・請求書に自動で入ります。</p>
@@ -454,6 +446,9 @@
   const KM_RATE = 20;    // 見本：自家用車の1kmあたりの金額
   const MODE_LABEL = { train:'電車・バス', walk:'徒歩', car:'自家用車' };
   const ME = '猫手';
+  const MAX_VISITS = 3;  // 1日に報告できる件数
+  const CUSTOMERS = [['A様','掃除・洗濯'], ['B様','訪問調理'], ['C様','整理収納']];
+  const WORKS = ['掃除','洗濯','料理','片付け','買い物'];
 
   // ---------- 画面の切り替え ----------
   const titleEl = document.getElementById('title');
@@ -534,10 +529,78 @@
   const today = new Date();
   document.getElementById('rDate').value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
 
+  // ---------- その日の件（お客様・時間・作業）。1日3件まで ----------
+  const visitsEl = document.getElementById('visits');
+  const addVisitBtn = document.getElementById('addVisit');
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const toTime = m => { m = Math.max(0, Math.min(m, 23 * 60 + 59)); return String(Math.floor(m / 60)).padStart(2,'0') + ':' + String(m % 60).padStart(2,'0'); };
+
+  function addVisit(){
+    const now = readVisits();
+    const used = now.map(v => v.customer);
+    const cust = (CUSTOMERS.find(c => !used.includes(c[0])) || CUSTOMERS[0])[0];
+    const prev = now[now.length - 1];
+    // 2件目からは、前の件が終わった30分後に始めて2時間半の仮の時間を入れておく
+    const start = prev && prev.end ? toTime(toMin(prev.end) + 30) : '13:00';
+    const end = prev && prev.end ? toTime(toMin(prev.end) + 180) : '15:30';
+    const div = document.createElement('div');
+    div.className = 'visit';
+    div.innerHTML =
+      '<div class="visit-head"><b class="v-no"></b><button type="button" class="leg-del v-del">この件を消す</button></div>' +
+      '<div class="field"><label>お客様</label><select class="v-cust">' +
+        CUSTOMERS.map(c => '<option value="' + c[0] + '">' + c[0] + '（' + c[1] + '）</option>').join('') +
+      '</select></div>' +
+      '<div class="row2">' +
+        '<div class="field"><label>始めた時間</label><input type="time" class="v-start" required></div>' +
+        '<div class="field"><label>終わった時間</label><input type="time" class="v-end" required></div>' +
+      '</div>' +
+      '<div class="field"><div class="label">やった作業</div><div class="chips">' +
+        WORKS.map((w, i) => '<label><input type="checkbox" value="' + w + '"' + (i === 0 ? ' checked' : '') + '>' + w + '</label>').join('') +
+      '</div></div>';
+    const sel = div.querySelector('.v-cust');
+    sel.value = cust;
+    div.dataset.house = cust + '宅';
+    div.querySelector('.v-start').value = start;
+    div.querySelector('.v-end').value = end;
+    sel.addEventListener('change', () => {
+      const house = sel.value + '宅';
+      // 交通費をまだ自分で書きかえていなければ作り直す。書きかえていれば、前のお宅の名前だけ新しいお宅に合わせる
+      if (legsTouched) legsEl.querySelectorAll('.l-from, .l-to').forEach(i => { if (i.value === div.dataset.house) i.value = house; });
+      div.dataset.house = house;
+      if (!legsTouched) resetLegs();
+    });
+    div.querySelector('.v-del').addEventListener('click', () => { div.remove(); refreshVisits(); if (!legsTouched) resetLegs(); });
+    visitsEl.appendChild(div);
+    refreshVisits();
+  }
+  function refreshVisits(){
+    const list = [...visitsEl.querySelectorAll('.visit')];
+    list.forEach((d, i) => {
+      d.querySelector('.v-no').textContent = (i + 1) + '件目';
+      d.querySelector('.v-del').hidden = list.length === 1;
+    });
+    addVisitBtn.hidden = list.length >= MAX_VISITS;
+    addVisitBtn.textContent = '＋ ' + (list.length + 1) + '件目を足す';
+    document.getElementById('visitHint').hidden = list.length >= MAX_VISITS;
+  }
+  function readVisits(){
+    return [...visitsEl.querySelectorAll('.visit')].map(d => ({
+      customer: d.querySelector('.v-cust').value,
+      start: d.querySelector('.v-start').value,
+      end: d.querySelector('.v-end').value,
+      works: [...d.querySelectorAll('.chips input:checked')].map(i => i.value)
+    }));
+  }
+  function resetVisits(){
+    visitsEl.innerHTML = '';
+    addVisit();
+  }
+  addVisitBtn.addEventListener('click', () => { addVisit(); if (!legsTouched) resetLegs(); });
+
   // 交通費の区間（どこから・どこまで・いくら）
   const legsEl = document.getElementById('legs');
-  const custSel = document.getElementById('rCustomer');
   const fareTotalEl = document.getElementById('fareTotal');
+  let legsTouched = false;  // 交通費を自分で書きかえたか（書きかえる前は、件に合わせて自動で作り直す）
 
   function addLeg(from, to, mode){
     const div = document.createElement('div');
@@ -560,9 +623,8 @@
     div.querySelector('.l-from').value = from || '';
     div.querySelector('.l-to').value = to || '';
     div.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', () => { setMode(div, b.dataset.mode); updateFareTotal(); }));
-    div.querySelector('.leg-del').addEventListener('click', () => { div.remove(); updateFareTotal(); });
-    div.querySelector('.l-fare').addEventListener('input', updateFareTotal);
-    div.querySelector('.l-km').addEventListener('input', updateFareTotal);
+    div.querySelector('.leg-del').addEventListener('click', () => { legsTouched = true; div.remove(); updateFareTotal(); });
+    div.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { legsTouched = true; updateFareTotal(); }));
     setMode(div, mode || 'train');
     legsEl.appendChild(div);
   }
@@ -592,36 +654,43 @@
     });
     fareTotalEl.textContent = yen(readLegs().reduce((s, l) => s + legFare(l), 0));
   }
+  // 件の順に「自宅 → 1件目 → 2件目 → … → 自宅」を入れる
   function resetLegs(){
     legsEl.innerHTML = '';
-    const house = custSel.value + '宅';
-    addLeg('自宅', house);
-    addLeg(house, '自宅');
+    const stops = ['自宅'].concat(readVisits().map(v => v.customer + '宅'), ['自宅']);
+    for (let i = 0; i < stops.length - 1; i++){
+      if (stops[i] !== stops[i + 1]) addLeg(stops[i], stops[i + 1]);
+    }
+    legsTouched = false;
     updateFareTotal();
   }
-  // お客様を選び直したら、まだ書きかえていない「〇様宅」を新しいお宅に合わせる
-  let lastHouse = custSel.value + '宅';
-  custSel.addEventListener('change', () => {
-    const house = custSel.value + '宅';
-    legsEl.querySelectorAll('.l-from, .l-to').forEach(i => { if (i.value === lastHouse) i.value = house; });
-    lastHouse = house;
-  });
   document.getElementById('addLeg').addEventListener('click', () => {
     const legs = readLegs();
     const last = legs[legs.length - 1];
     addLeg(last ? last.to : '自宅', '', last ? last.mode : 'train');
+    legsTouched = true;
     updateFareTotal();
   });
+  resetVisits();
   resetLegs();
 
   document.getElementById('reportForm').addEventListener('submit', e => {
     e.preventDefault();
     const err = document.getElementById('rError');
     const fail = msg => { err.textContent = msg; err.hidden = false; };
-    const start = document.getElementById('rStart').value;
-    const end = document.getElementById('rEnd').value;
-    const m = minutes(start, end);
-    if (m <= 0) return fail('終わった時間が、始めた時間より後になるように直してください。');
+    const visits = readVisits();
+    const multi = visits.length > 1;
+    for (let i = 0; i < visits.length; i++){
+      const v = visits[i];
+      const no = multi ? (i + 1) + '件目：' : '';
+      if (!v.start || !v.end) return fail(no + '始めた時間と終わった時間を入れてください。');
+      if (minutes(v.start, v.end) <= 0) return fail(no + '終わった時間が、始めた時間より後になるように直してください。');
+    }
+    // 時間の早い順に並べて、重なっていないか確かめる
+    const sorted = visits.slice().sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 1; i < sorted.length; i++){
+      if (sorted[i].start < sorted[i - 1].end) return fail(sorted[i - 1].customer + 'と' + sorted[i].customer + 'の時間が重なっています。時間を直してください。');
+    }
     const raw = readLegs().filter(l => l.from || l.to || l.fareText || l.kmText);
     for (let i = 0; i < raw.length; i++){
       const l = raw[i];
@@ -631,23 +700,25 @@
       if (l.mode === 'car' && !(Number(l.kmText) > 0)) return fail(no + '走った距離（km）を書いてください。');
     }
     err.hidden = true;
-    const legs = raw.map(l => {
+    const date = document.getElementById('rDate').value;
+    const rs = sorted.map(v => ({ name: ME, customer: v.customer, date: date, start: v.start, end: v.end, works: v.works, legs: [], fare: 0 }));
+    // 交通費の区間は、到着先のお宅の件につける。どのお宅でもない行き先（帰りの「自宅」など）は、その日の最後の件につける
+    raw.forEach(l => {
       const leg = { mode:l.mode, from:l.from, to:l.to, fare:legFare(l) };
       if (l.mode === 'car') leg.km = Number(l.kmText);
-      return leg;
+      const r = rs.find(x => x.customer + '宅' === leg.to && !x.legs.some(y => y.to === leg.to)) || rs[rs.length - 1];
+      r.legs.push(leg);
+      r.fare += leg.fare;
     });
-    const r = {
-      name: ME,
-      customer: custSel.value,
-      date: document.getElementById('rDate').value,
-      start: start, end: end,
-      legs: legs,
-      fare: legs.reduce((s, l) => s + l.fare, 0)
-    };
-    reports.push(r);
+    rs.forEach(r => reports.push(r));
     save(reports);
-    document.getElementById('doneText').textContent = r.customer + '　' + r.start + '〜' + r.end + '（' + hours(m) + '）　交通費 ' + yen(r.fare);
-    document.getElementById('doneLegs').innerHTML = legs.map(l => '<li>' + esc(l.from) + ' → ' + esc(l.to) + '　' + modeText(l) + '　' + yen(l.fare) + '</li>').join('');
+    const allLegs = [].concat(...rs.map(r => r.legs));
+    const totalFare = allLegs.reduce((s, l) => s + l.fare, 0);
+    const totalM = rs.reduce((s, r) => s + minutes(r.start, r.end), 0);
+    document.getElementById('doneVisits').innerHTML = rs.map(r => '<li>' + r.customer + '　' + r.start + '〜' + r.end + '（' + hours(minutes(r.start, r.end)) + '）</li>').join('');
+    document.getElementById('doneText').textContent = (rs.length > 1 ? rs.length + '件・合計 ' + hours(totalM) + '　' : '') + '交通費 ' + yen(totalFare);
+    document.getElementById('doneLegs').innerHTML = allLegs.map(l => '<li>' + esc(l.from) + ' → ' + esc(l.to) + '　' + modeText(l) + '　' + yen(l.fare) + '</li>').join('');
+    resetVisits();
     resetLegs();
     show('reportDone');
   });
