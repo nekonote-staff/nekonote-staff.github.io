@@ -211,6 +211,27 @@
   .compare .before{ background:#f1f1f1; }
   .compare .after{ background:var(--main-soft); }
   .compare b{ display:block; margin-bottom:0.3rem; }
+  /* 勤務表 */
+  .roster-go{ margin:0 0 1rem; }
+  .submit-row{ display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.4rem; }
+  .submit-row span{ border-radius:999px; padding:0.25rem 0.8rem; font-size:0.85rem; font-weight:700; }
+  .submit-row .yes{ background:var(--accent-soft); color:var(--accent); }
+  .submit-row .no{ background:var(--danger-soft); color:var(--danger); }
+  .roster th, .roster td{ text-align:center; padding:0.45rem 0.25rem; }
+  .roster th:first-child, .roster td:first-child{ text-align:left; }
+  .roster td.weekend{ color:var(--danger); }
+  .roster .c{ display:inline-block; min-width:2.6rem; border-radius:6px; padding:0.15rem 0.3rem; font-size:0.8rem; font-weight:700; }
+  .roster .c-all{ background:var(--main); color:#fff; }
+  .roster .c-am, .roster .c-pm{ background:var(--accent-soft); color:var(--accent); }
+  .roster .c-off{ color:#aaa; }
+  .roster .c-none{ color:var(--danger); border:1px dashed var(--danger); }
+  .roster td.short{ background:var(--danger-soft); color:var(--danger); font-weight:700; }
+  .roster tfoot td{ font-weight:700; background:#f3f3f3; }
+  .legend .c{ min-width:1.6rem; text-align:center; }
+  .legend{ display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem 0.8rem; font-size:0.8rem; color:var(--sub); margin:0.4rem 0 0.2rem; }
+  .short-list{ list-style:none; }
+  .short-list li{ background:var(--danger-soft); color:var(--danger); border-radius:8px; padding:0.5rem 0.8rem; margin-bottom:0.4rem; font-weight:700; font-size:0.95rem; }
+  .short-list li.ok{ background:var(--accent-soft); color:var(--accent); }
   .reset{ background:none; border:none; color:var(--sub); text-decoration:underline; font-family:inherit; font-size:0.85rem; cursor:pointer; margin-top:1rem; }
 
   @media print{
@@ -396,10 +417,30 @@
     <ul class="shift-list" id="shiftList"></ul>
     <button class="big-btn" id="shiftSubmit">この内容で出す</button>
     <p class="check-result" id="shiftMsg" hidden></p>
+    <button class="sub-btn" id="shiftToRoster" data-go="roster" hidden>社員さんの勤務表でどう見えるか確かめる</button>
+  </section>
+
+  <!-- 社員用：勤務表 -->
+  <section class="screen admin" id="roster" data-title="社員用：勤務表">
+    <div class="top-note">パートさんが出したシフト希望を、自動で1枚の表にまとめています。<br>名前・希望はすべて見本です。</div>
+    <h3>提出したか</h3>
+    <div class="submit-row" id="submitRow"></div>
+    <p class="muted">締め切り：10月28日（水）。まだの人がいると表に「未」と出ます。</p>
+    <h3>足りない時間帯</h3>
+    <ul class="short-list" id="shortList"></ul>
+    <h3 id="rosterHead">勤務表</h3>
+    <div class="legend roster"><span><span class="c c-all">全</span> 全日</span><span><span class="c c-am">前</span> 午前のみ</span><span><span class="c c-pm">後</span> 午後のみ</span><span><span class="c c-off">―</span> 休み</span><span><span class="c c-none">未</span> まだ出していない</span></div>
+    <div class="table-wrap"><table class="roster">
+      <thead id="rosterHeadRow"></thead>
+      <tbody id="rosterBody"></tbody>
+      <tfoot id="rosterFoot"></tfoot>
+    </table></div>
+    <p class="muted">右の「午前」「午後」は、その時間に入れる人の数です。平日で0人のところは赤くなります（土日はお休みの想定）。</p>
   </section>
 
   <!-- 社員用 -->
   <section class="screen admin" id="admin" data-title="社員用：今月の集計">
+    <button class="sub-btn roster-go" data-go="roster">パートさんの勤務表（来月のシフト希望）を見る</button>
     <div class="top-note">パートさんの作業報告から、自動で計算しています。<br>時給1,480円・料金1時間（旧顧客4,650円／新顧客4,860円）は見本の数字です。</div>
     <div class="stat-row">
       <div class="stat"><span class="n" id="sCount">0</span><span class="l">報告の数</span></div>
@@ -474,6 +515,7 @@
     document.getElementById('topLogo').hidden = id !== 'home';
     if (id === 'home') history.length = 0;
     if (id === 'admin') renderAdmin();
+    if (id === 'roster') renderRoster();
     window.scrollTo(0, 0);
   }
   document.addEventListener('click', e => {
@@ -749,16 +791,21 @@
   const next = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const wd = ['日','月','火','水','木','金','土'];
   const shiftOpts = [['all','全日'], ['am','午前のみ'], ['pm','午後のみ'], ['off','休み']];
+  const SHIFT_KEY = 'nekonote-sample-myshift-v1';
+  const SHIFT_DAYS = 14;  // 見本のため14日分
+  let myShift = null;     // 猫手さん（自分）の希望。出すまでは null
+  try { const v = JSON.parse(localStorage.getItem(SHIFT_KEY)); if (v && typeof v === 'object') myShift = v; } catch(e){}
   for (let d = 1; d <= 14; d++){
     const dt = new Date(next.getFullYear(), next.getMonth(), d);
     const li = document.createElement('li');
+    li.dataset.day = d;
     if (dt.getDay() === 0 || dt.getDay() === 6) li.className = 'weekend';
     li.innerHTML = '<span class="d">' + (dt.getMonth()+1) + '月' + d + '日（' + wd[dt.getDay()] + '）</span>';
     const opts = document.createElement('div');
     opts.className = 'shift-opts';
     shiftOpts.forEach(([v, label]) => {
       const btn = document.createElement('button');
-      btn.className = 'shift-btn' + (v === 'off' ? ' on' : '');
+      btn.className = 'shift-btn' + (v === ((myShift && myShift[d]) || 'off') ? ' on' : '');
       btn.type = 'button'; btn.dataset.v = v; btn.textContent = label;
       btn.addEventListener('click', () => {
         opts.querySelectorAll('.shift-btn').forEach(b => b.classList.toggle('on', b === btn));
@@ -776,7 +823,62 @@
     const count = v => shiftList.querySelectorAll('.shift-btn.on[data-v="' + v + '"]').length;
     msg.textContent = '提出しました（全日' + count('all') + '日・午前のみ' + count('am') + '日・午後のみ' + count('pm') + '日）。社員さんの画面で、全員分が一覧になります。';
     msg.hidden = false;
+    myShift = {};
+    shiftList.querySelectorAll('li[data-day]').forEach(li => { myShift[li.dataset.day] = li.querySelector('.shift-btn.on').dataset.v; });
+    try { localStorage.setItem(SHIFT_KEY, JSON.stringify(myShift)); } catch(e){}
+    document.getElementById('shiftToRoster').hidden = false;
   });
+  document.querySelector('#shift').dataset.title = 'シフト希望（' + (next.getMonth() + 1) + '月）';
+
+  // ---------- 社員用：勤務表 ----------
+  // 見本のほかのパートさんの希望（1日〜14日）。猫手さんの分は、シフト希望の画面で出した内容が入る
+  const OTHER_SHIFTS = {
+    '鈴木': ['off','am','am','all','am','off','off','off','am','am','all','am','off','off'],
+    '高橋': ['off','pm','off','pm','all','pm','am','off','all','off','pm','off','pm','am']
+  };
+  const SHORT = { all:'全', am:'前', pm:'後', off:'―' };
+  function renderRoster(){
+    const month = next.getMonth() + 1;
+    document.getElementById('roster').dataset.title = '社員用：勤務表（' + month + '月）';
+    titleEl.textContent = document.getElementById('roster').dataset.title;
+    document.getElementById('rosterHead').textContent = month + '月の勤務表（1日〜' + SHIFT_DAYS + '日・見本）';
+    const staff = [ME].concat(Object.keys(OTHER_SHIFTS));
+    const wish = (n, d) => n === ME ? (myShift ? myShift[d] || 'off' : null) : OTHER_SHIFTS[n][d - 1];
+
+    document.getElementById('submitRow').innerHTML = staff.map(n => {
+      const done = n !== ME || myShift;
+      return '<span class="' + (done ? 'yes' : 'no') + '">' + n + 'さん ' + (done ? '提出ずみ' : 'まだ') + '</span>';
+    }).join('');
+
+    document.getElementById('rosterHeadRow').innerHTML = '<tr><th>日付</th>' + staff.map(n => '<th>' + n + '</th>').join('') + '<th>午前</th><th>午後</th></tr>';
+    let body = '';
+    const shorts = [];
+    const days = {};
+    staff.forEach(n => days[n] = 0);
+    for (let d = 1; d <= SHIFT_DAYS; d++){
+      const dt = new Date(next.getFullYear(), next.getMonth(), d);
+      const we = dt.getDay() === 0 || dt.getDay() === 6;
+      let am = 0, pm = 0;
+      const cells = staff.map(n => {
+        const w = wish(n, d);
+        if (w === null) return '<td><span class="c c-none">未</span></td>';
+        if (w === 'all' || w === 'am') am++;
+        if (w === 'all' || w === 'pm') pm++;
+        if (w !== 'off') days[n]++;
+        return '<td><span class="c c-' + w + '">' + SHORT[w] + '</span></td>';
+      }).join('');
+      const label = month + '/' + d + '（' + wd[dt.getDay()] + '）';
+      body += '<tr><td' + (we ? ' class="weekend"' : '') + '>' + label + '</td>' + cells +
+        '<td' + (am || we ? '' : ' class="short"') + '>' + am + '</td><td' + (pm || we ? '' : ' class="short"') + '>' + pm + '</td></tr>';
+      // 見本：平日だけ「足りない」を出す（土日はお休みの想定）
+      if (!we && (!am || !pm)) shorts.push(month + '月' + d + '日（' + wd[dt.getDay()] + '）' + (!am && !pm ? '午前・午後とも' : !am ? '午前' : '午後') + '：入れる人がいません');
+    }
+    document.getElementById('rosterBody').innerHTML = body;
+    document.getElementById('rosterFoot').innerHTML = '<tr><td>入れる日</td>' + staff.map(n => '<td>' + (n === ME && !myShift ? '―' : days[n] + '日') + '</td>').join('') + '<td></td><td></td></tr>';
+    document.getElementById('shortList').innerHTML = shorts.length
+      ? shorts.map(t => '<li>' + t + '</li>').join('')
+      : '<li class="ok">平日はすべて、午前・午後とも1人以上入れます</li>';
+  }
 
   // ---------- 社員用の集計 ----------
   function renderAdmin(){
@@ -870,6 +972,7 @@
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     reports = seed(); save(reports);
+    myShift = null; try { localStorage.removeItem(SHIFT_KEY); } catch(e){}
     rates = JSON.parse(JSON.stringify(DEFAULT_RATES)); saveObj(RATE_KEY, rates); fillRates();
     custTypes = JSON.parse(JSON.stringify(DEFAULT_TYPES)); saveObj(TYPE_KEY, custTypes); renderCustTypes();
     renderAdmin();
