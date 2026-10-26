@@ -256,7 +256,7 @@
       <p class="hello">猫手さん、お疲れ様です。<small>今日もよろしくお願いします。</small></p>
     </div>
     <div class="notice"><b>お知らせ（10月25日）</b>11月のシフト希望は<strong>10月28日（水）まで</strong>に出してください。</div>
-    <div class="today" id="today" data-start="13:00" data-end="15:30"><b>今日のお仕事</b>13:00〜15:30　A様宅（掃除・洗濯）<span class="today-pay" id="todayPay"></span></div>
+    <div class="today" id="today" data-customer="A様" data-start="13:00" data-end="15:30"><b>今日のお仕事</b>13:00〜15:30　A様宅（掃除・洗濯）<span class="today-pay" id="todayPay"></span></div>
     <div class="menu">
       <button class="primary" data-go="report">作業報告<small>終わったらここ</small></button>
       <button data-go="manual">マニュアル<small>掃除・料理のやり方</small></button>
@@ -515,6 +515,7 @@
     document.getElementById('topLogo').hidden = id !== 'home';
     if (id === 'home') history.length = 0;
     if (id === 'admin') renderAdmin();
+    if (id === 'home') renderToday();
     if (id === 'roster') renderRoster();
     window.scrollTo(0, 0);
   }
@@ -575,13 +576,6 @@
   }
   const yen = n => n.toLocaleString('ja-JP') + '円';
   const hours = m => (m / 60).toFixed(1).replace(/\.0$/, '') + '時間';
-
-  // ---------- 今日のお仕事：お給料の目安（時間 × 見本の時給） ----------
-  (function(){
-    const t = document.getElementById('today');
-    const m = minutes(t.dataset.start, t.dataset.end);
-    document.getElementById('todayPay').innerHTML = 'お給料の目安　<strong>' + yen(Math.round(m / 60 * HOURLY)) + '</strong><small>' + hours(m) + ' × 時給' + yen(HOURLY) + '（見本の時給）</small>';
-  })();
 
   // ---------- 作業報告 ----------
   const today = new Date();
@@ -969,6 +963,17 @@
   }
   fillRates();
   renderCustTypes();
+
+  // ---------- 今日のお仕事：お客様への請求額（時間 × そのお客様の料金）。社員用の料金表を書きかえると変わる ----------
+  function renderToday(){
+    const t = document.getElementById('today');
+    const c = t.dataset.customer;
+    const m = minutes(t.dataset.start, t.dataset.end);
+    const ty = custTypes[c] || { age:'new', use:'spot' };
+    const rate = rates[ty.age + '-' + ty.use];
+    document.getElementById('todayPay').innerHTML = 'ご請求額　<strong>' + yen(Math.round(m / 60 * rate)) + '</strong><small>' + hours(m) + ' × 1時間' + yen(rate) + '（' + c + '：' + TYPE_LABEL[ty.age] + '・' + TYPE_LABEL[ty.use] + '利用）</small>';
+  }
+  renderToday();
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     reports = seed(); save(reports);
